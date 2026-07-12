@@ -1,0 +1,8 @@
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: true
+theme: jekyll-theme-minimal
+title: Claude History Browser
+description: 键盘驱动的 Claude Code 历史会话浏览器 TUI
