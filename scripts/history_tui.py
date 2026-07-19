@@ -340,7 +340,7 @@ def row_answer(text, qt, ts):
         plain = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
         r.append((None, f"{indent}{plain}"))
     r.append(("sep",   f"  {'─'*74}"))
-    r.append(("hint",  f"  [↑/↓ prev/next]  ↑↓ 滚动  ESC 返回  ·  {len(text)} 字"))
+    r.append(("hint",  f"  [↑/↓ prev/next]  PgUp/PgDn 滚动  ESC 返回  ·  {len(text)} 字"))
     return r
 
 
@@ -651,9 +651,7 @@ def main():
     @kb.add("up", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if scroll_y > 0:
-            scroll_y -= 1
-        elif sel > 0:
+        if sel > 0:
             sel -= 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -661,16 +659,13 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next  PgUp/PgDn 滚动"
         # else: at first question, top of scroll — do nothing
 
     @kb.add("down", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        max_scroll = max(0, len(rows) - 3)
-        if scroll_y < max_scroll:
-            scroll_y += 1
-        elif sel < total_questions - 1:
+        if sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -678,7 +673,7 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next  PgUp/PgDn 滚动"
         # else: at last question, bottom of scroll — do nothing
 
     @kb.add("pageup", filter=is_l12)
