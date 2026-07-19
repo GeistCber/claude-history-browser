@@ -290,6 +290,18 @@ def row_questions(qs, uuid8, ds, title):
     r.append(("hint",  "  ↑↓  PgUp/PgDn  Enter 查看  ESC 返回"))
     return r
 
+def _split_long_line(line, width=74):
+    """Split a line into list of fragments, each <= width chars."""
+    if len(line) <= width:
+        return [line]
+    parts = []
+    while len(line) > width:
+        parts.append(line[:width])
+        line = line[width:]
+    if line:
+        parts.append(line)
+    return parts
+
 def row_answer(text, qt, ts):
     """层3：Claude 干净风格。横幅移除，MD 标记真实渲染"""
     r = []
@@ -314,7 +326,11 @@ def row_answer(text, qt, ts):
             continue
         if in_code:
             # 代码块内保持原文
-            r.append(("code", f"  {line}"))
+            if len(f"  {line}") > 76:
+                for chunk in _split_long_line(f"  {line}", 76):
+                    r.append(("code", chunk))
+            else:
+                r.append(("code", f"  {line}"))
             continue
         # Markdown 行
         stripped = line.lstrip()
@@ -338,7 +354,12 @@ def row_answer(text, qt, ts):
             continue
         # 普通文本（行内做一个简易粗体替换：去掉 ** 但加粗）
         plain = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
-        r.append((None, f"{indent}{plain}"))
+        full = f"{indent}{plain}"
+        if len(full) > 76:
+            for chunk in _split_long_line(full, 76):
+                r.append((None, chunk))
+        else:
+            r.append((None, full))
     r.append(("sep",   f"  {'─'*74}"))
     r.append(("hint",  f"  [↑/↓ prev/next]  PgUp/PgDn 滚动  ESC 返回  ·  {len(text)} 字"))
     return r
@@ -651,9 +672,7 @@ def main():
     @kb.add("up", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if scroll_y > 0:
-            scroll_y -= 1
-        elif sel > 0:
+        if sel > 0:
             sel -= 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -661,16 +680,13 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ 滚动到顶/底后自动切题"
-        # else: at first question, top of scroll — do nothing
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+        # else: at first question — do nothing
 
     @kb.add("down", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        max_scroll = max(0, len(rows) - 3)
-        if scroll_y < max_scroll:
-            scroll_y += 1
-        elif sel < total_questions - 1:
+        if sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -678,8 +694,8 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ 滚动到顶/底后自动切题"
-        # else: at last question, bottom of scroll — do nothing
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+        # else: at last question — do nothing
 
     @kb.add("pageup", filter=is_l12)
     def _(e):
@@ -709,10 +725,7 @@ def main():
     @kb.add("pagedown", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        max_scroll = max(0, len(rows) - 3)
-        if scroll_y < max_scroll:
-            scroll_y = min(max_scroll, scroll_y + 20)
-        elif sel < total_questions - 1:
+        if sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -721,6 +734,7 @@ def main():
             scroll_y = 0
             rb3()
             info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+        # else: at last question — do nothing
 
     @kb.add("enter", filter=is_l1)
     def _(e):
@@ -747,7 +761,7 @@ def main():
         level=3; scroll_y=0; rb3()
         info_msg=f"#{sel+1} · {len(show_text)}字 · ESC 返回"
 
-    @kb.add("escape")
+    @kb.add("escape", filter=Condition(lambda: level in (1,2,3) and not export_mode and not export_result))
     def _(e):
         nonlocal level, sel, scroll_y, info_msg
         if level==3:
