@@ -3,68 +3,102 @@ name: history-search
 description: >
   键盘驱动的三层历史浏览器 TUI。方向键导航，Enter 选中，ESC 逐级返回。
   从预缓存读取会话/问题列表，惰性加载 AI 回答原文（一字不落）。
-  全键盘操作，中日韩对齐，纯只读，不影响当前上下文。
+  纯只读，不影响当前上下文。
 ---
 
 # history-search
 
-浏览 Claude Code 历史会话的三层键盘驱动 TUI。
-
-## 何时使用
-
-- 想快速翻看或搜索历史对话记录时
-- 需要回顾某个会话中 AI 给出的完整回答（一字不落）
-- 不想在 Claude Code 聊天框里翻 JSONL 文件时
-
-## 安装
+在**你自己的终端**（cmd / PowerShell）里运行独立的交互式 TUI 程序：
 
 ```bash
-pip install prompt_toolkit wcwidth
+python C:\Users\Laptop\.claude\skills\history-search\scripts\history_tui.py
 ```
 
-## 用法
-
-把本目录放到 `~/.claude/skills/history-search/`，然后在终端运行：
-
+Git Bash 下用 `winpty`：
 ```bash
-python scripts/history_tui.py --jsonl-dir "PATH_TO_YOUR_JSONL"
+winpty python C:\Users\Laptop\.claude\skills\history-search\scripts\history_tui.py
 ```
-
-Claude Code 中通过 `/history-search` 触发本 skill。
 
 ## 三层导航
 
-| 层级 | 内容 | 按键 |
+| 层级 | 内容 | 操作 |
 |------|------|------|
-| 1 | 所有历史会话（按时间倒序） | ↑↓ 选择，Enter 进入，ESC/^C 退出 |
-| 2 | 该会话的历次提问列表 | ↑↓ 选择，Enter 查看回答，ESC 返回 |
-| 3 | AI 回答原文（Markdown 渲染） | ↑↓ 滚动，ESC 返回问题列表 |
+| 1 | 所有历史会话（按时间倒序），显示项目标签 `[项目]` 和导出标记 `[E]` | ↑↓ 移动，Enter 进入，ESC/^C 退出 |
+| 2 | 该会话的历次提问列表 | ↑↓ 移动，Enter 查看回答，ESC 回层1 |
+| 3 | AI 回答原文（一字不差，含 Write 内容） | ↑↓ 滚动，ESC 回层2 |
 
-## 特性
-
-- **键盘驱动** — 方向键 + PgUp/PgDn + Enter + ESC，全键盘操作
-- **三级 ESC 返回** — 第3→第2→第1→退出，不丢导航位置
-- **中日韩对齐** — 使用 wcwidth 正确处理东亚双宽字符
-- **Markdown 渲染** — 标题/粗体/列表/代码块在终端中真实渲染，去掉标记符号
-- **原文保证** — AI 回答一字不改，包括 Write 工具写入的文件内容
-- **惰性加载** — 回答正文不预存，选中后才从 JSONL 读取
-- **预缓存** — 会话列表和问题列表通过 update_cache.py 预生成索引
+ESC 逐级返回：第3→第2→第1→退出。
 
 ## 数据机制
 
-- **开关**：`.history_cache/.off` 存在时跳过缓存更新
-- **缓存**（轻量索引，不存回答正文）：`sessions.json` + `{uuid}.json`
-- **惰性加载**：回答原文实时从 JSONL 读取，不预存
-- **自动更新**：SessionStart hook 调用 `scripts/update_cache.py`
+- **开关**：`.history_cache/.off` 存在时跳过缓存更新。
+- **缓存**（轻量索引，不存回答正文）：`sessions.json` + `{uuid}.json`，支持多项目分目录存储。
+- **项目感知**：自动扫描 `~/.claude/projects/` 下所有项目目录，按项目分组建立索引。
+- **惰性加载**：回答原文实时从 JSONL 读取，不预存。
+- **自动更新**：SessionStart hook 调用 `scripts/update_cache.py`。
 
-## 文件结构
+## 导出 / 导入
+
+将对话历史通过 `.claude-export` 格式在机器间传输。
+
+### 导出
+
+```bash
+# 导出所有项目
+python scripts/export.py --output ./my-backup
+
+# 只导出一个项目
+python scripts/export.py --project C--Users-Laptop --output ./laptop-backup
+
+# 只导出一个会话
+python scripts/export.py --session <uuid> --output ./single-session
+
+# 预览不复制
+python scripts/export.py --dry-run
+
+# 额外生成人类可读的 Markdown
+python scripts/export.py --format md --output ./with-markdown
+```
+
+### 导入
+
+```bash
+# 先验证再导入
+python scripts/import.py --input ./my-backup --dry-run
+
+# 覆盖已有文件
+python scripts/import.py --input ./my-backup --overwrite
+
+# 导入到新项目名
+python scripts/import.py --input ./my-backup --project MyNewProject
+
+# 导入后重建缓存
+python scripts/import.py --input ./my-backup --update-cache
+```
+
+### 跨机传输示例
+
+1. 源机器：`python scripts/export.py --output ./backup-20260719`
+2. 传输目录（USB、网络共享、云存储）
+3. 目标机器：`cd ~/.claude/skills/history-search/scripts`
+4. `python import.py --input ./backup-20260719 --update-cache`
+5. 运行 `history_tui.py` 即可浏览导入会话
+
+导出格式是可移植目录树，不含机器特定依赖。
+
+## 多项目支持
+
+update_cache.py 自动扫描 `~/.claude/projects/` 下所有项目。可以限制到单个项目：
+
+```bash
+python scripts/update_cache.py --project C--Users-Laptop
+python scripts/update_cache.py --project c--Users-Laptop-Desktop-C--
+```
+
+TUI 中每行会话显示 `[项目简称]` 标签，已导出的会话显示 `[E]` 标记。
+
+## 安装
 
 ```
-~/.claude/skills/history-search/
-├── SKILL.md                     ← Skill 定义（Claude Code 识别入口）
-├── README.md                    ← GitHub 项目说明
-├── LICENSE                      ← MIT 许可
-├── scripts/
-│   ├── history_tui.py           ← 三层键盘 TUI 主程序
-│   └── update_cache.py          ← JSONL→缓存索引扫描
-└── .history_cache/              ← 缓存目录（自动生成）
+pip install prompt_toolkit wcwidth
+```
