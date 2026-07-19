@@ -23,7 +23,9 @@ _ptk_out.create_output = _force_vt100
 from prompt_toolkit import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.bindings.mouse import MouseEventType
 from prompt_toolkit.layout import Layout, Window, FormattedTextControl, WindowAlign, HSplit
+from prompt_toolkit.layout.mouse_handlers import MouseEvent
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style
 from prompt_toolkit.output import ColorDepth
@@ -244,6 +246,7 @@ def row_sessions(ss, total, upd, exported_uuids):
     标题行 → 分隔线 → 每会话一行 → 分隔线 → 底栏
     """
     r = [("title", "  SESSIONS"),
+         ("info",  "  [项目] 项目标签 · [E] 已导出 · x=导出模式"),
          ("sep",   f"  {'─'*74}")]
     for i,s in enumerate(ss):
         try: d = datetime.fromisoformat(s["timestamp"].replace("Z","+00:00")).strftime("%m-%d") if s["timestamp"]!="0"*20 else "??-??"
@@ -303,66 +306,66 @@ def _split_long_line(line, width=74):
     return parts
 
 def row_answer(text, qt, ts):
-    """层3：Claude 干净风格。横幅移除，MD 标记真实渲染"""
-    r = []
+    """层3：Claude 干净风格。返回 (header_rows, content_rows)
+       header_rows: 时间戳 + 用户问题 + 分隔线（固定不滚动）
+       content_rows: AI 回答正文（可滚动）
+    """
+    header = []
     if ts:
-        r.append(("ts", f"  >>> {ts}"))
+        header.append(("ts", f"  >>> {ts}"))
     # 用户提问
-    r.append(("qtext", f"  {qt.replace(chr(10), chr(10)+'  ')}"))
-    r.append(("sep",   f"  {'─'*74}"))
-    # AI 回答正文——Markdown 渲染（去掉记号，保留原文）
+    header.append(("qtext", f"  {qt.replace(chr(10), chr(10)+'  ')}"))
+    header.append(("sep",   f"  {'─'*74}"))
+
+    # AI 回答正文
+    body = []
     in_code = False
     for line in text.split("\n"):
         if not line:
-            r.append((None, ""))
+            body.append((None, ""))
             continue
         # 代码块开关
         if line.startswith("```"):
             in_code = not in_code
             if in_code:
-                r.append(("code", "  ```"))
+                body.append(("code", "  ```"))
             else:
-                r.append(("code", "  ```"))
+                body.append(("code", "  ```"))
             continue
         if in_code:
-            # 代码块内保持原文
             if len(f"  {line}") > 76:
                 for chunk in _split_long_line(f"  {line}", 76):
-                    r.append(("code", chunk))
+                    body.append(("code", chunk))
             else:
-                r.append(("code", f"  {line}"))
+                body.append(("code", f"  {line}"))
             continue
-        # Markdown 行
         stripped = line.lstrip()
         indent = line[:len(line)-len(stripped)]
-        # 标题
         hm = re.match(r'^(#{1,3})\s+(.*)', stripped)
         if hm:
             level = len(hm.group(1))
             st = "h1" if level == 1 else "h2" if level == 2 else "h3"
-            r.append((st, f"{indent}{hm.group(2)}"))
+            body.append((st, f"{indent}{hm.group(2)}"))
             continue
-        # 粗体行
         if stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4:
-            r.append(("bold", f"{indent}{stripped[2:-2]}"))
+            body.append(("bold", f"{indent}{stripped[2:-2]}"))
             continue
-        # 列表
         bm = re.match(r'^(\s*)[-*]\s+(.*)', stripped)
         if bm:
             indent2 = indent + bm.group(1)
-            r.append(("list", f"{indent2}• {bm.group(2)}"))
+            body.append(("list", f"{indent2}• {bm.group(2)}"))
             continue
-        # 普通文本（行内做一个简易粗体替换：去掉 ** 但加粗）
         plain = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
         full = f"{indent}{plain}"
         if len(full) > 76:
             for chunk in _split_long_line(full, 76):
-                r.append((None, chunk))
+                body.append((None, chunk))
         else:
-            r.append((None, full))
-    r.append(("sep",   f"  {'─'*74}"))
-    r.append(("hint",  f"  [↑/↓ prev/next]  PgUp/PgDn 滚动  ESC 返回  ·  {len(text)} 字"))
-    return r
+            body.append((None, full))
+    # 底部尾栏也固定在可视区底部（由 render_body 处理）
+    tail = [("sep",  f"  {'─'*74}"),
+            ("hint", f"  ↑↓ scroll / switch question  PgUp/PgDn 翻页  ESC 返回  ·  {len(text)} 字")]
+    return header, body, tail
 
 
 def row_sessions_export(ss, selected_uuids, total_sessions):
@@ -436,6 +439,13 @@ def scrollbar_knob(total, view, pos):
     return ky, kh
 
 
+def _get_avail_height():
+    """获取终端可用行数（减去状态栏）"""
+    try: _, th = shutil.get_terminal_size()
+    except: th = 24
+    return max(5, th - 1)
+
+
 # ── 主程序 ──
 
 def main():
@@ -467,6 +477,11 @@ def main():
     show_ts = ""
     info_msg = ""
 
+    # 层3的头部和尾部分开存储（固定不滚动）
+    l3_header_rows = []
+    l3_body_rows = []
+    l3_tail_rows = []
+
     # rows: list of (style|None, text[, meta, exported])
     rows = []
     sel_abs = 0
@@ -474,7 +489,7 @@ def main():
     def fix_sel_abs():
         nonlocal sel_abs
         if level == 1:
-            sel_abs = 2 + sel
+            sel_abs = 3 + sel
         elif level == 2:
             sel_abs = 3 + sel
         else:
@@ -491,8 +506,9 @@ def main():
         fix_sel_abs()
 
     def rb3():
-        nonlocal rows, sel_abs
-        rows = row_answer(show_text, show_q, show_ts)
+        nonlocal rows, sel_abs, l3_header_rows, l3_body_rows, l3_tail_rows
+        l3_header_rows, l3_body_rows, l3_tail_rows = row_answer(show_text, show_q, show_ts)
+        rows = l3_header_rows + l3_body_rows + l3_tail_rows
         sel_abs = -1
 
     def rb_export():
@@ -601,7 +617,7 @@ def main():
 
     @kb.add("escape", filter=is_result)
     def _(e):
-        nonlocal export_result, level, info_msg
+        nonlocal export_result, level, info_msg, sel, scroll_y
         export_result = None
         level = 1
         info_msg = ""
@@ -672,7 +688,9 @@ def main():
     @kb.add("up", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if sel > 0:
+        if scroll_y > 0:
+            scroll_y -= 1
+        elif sel > 0:
             sel -= 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -680,13 +698,17 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
-        # else: at first question — do nothing
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ scroll/switch"
 
     @kb.add("down", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if sel < total_questions - 1:
+        body_total = len(l3_body_rows)
+        h = len(l3_header_rows)
+        body_av = max(1, _get_avail_height() - h)
+        if scroll_y + body_av < body_total:
+            scroll_y += 1
+        elif sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -694,8 +716,7 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
-        # else: at last question — do nothing
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ scroll/switch"
 
     @kb.add("pageup", filter=is_l12)
     def _(e):
@@ -720,12 +741,17 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ scroll/switch"
 
     @kb.add("pagedown", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if sel < total_questions - 1:
+        body_total = len(l3_body_rows)
+        h = len(l3_header_rows)
+        body_av = max(1, _get_avail_height() - h)
+        if scroll_y + body_av < body_total:
+            scroll_y = min(body_total - body_av, scroll_y + 20)
+        elif sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -733,8 +759,7 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next"
-        # else: at last question — do nothing
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ scroll/switch"
 
     @kb.add("enter", filter=is_l1)
     def _(e):
@@ -779,81 +804,169 @@ def main():
 
     # ── 渲染 ──
     term_h = [24]
+    scroll_dragging = [False]
+
+    def scrollbar_mouse_handler(mouse_event: MouseEvent) -> object:
+        """滚动条鼠标回调：按住拖动。"""
+        nonlocal scroll_y
+        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+            scroll_dragging[0] = True
+            _scroll_to_mouse(mouse_event)
+        elif mouse_event.event_type == MouseEventType.MOUSE_MOVE and scroll_dragging[0]:
+            _scroll_to_mouse(mouse_event)
+        elif mouse_event.event_type == MouseEventType.MOUSE_UP:
+            scroll_dragging[0] = False
+        return None
+
+    def _scroll_to_mouse(mouse_event):
+        nonlocal scroll_y
+        try: _, th = shutil.get_terminal_size()
+        except: th = term_h[0]
+        av = max(5, th - 1)
+        if level == 3 and l3_body_rows:
+            hdr_h = len(l3_header_rows)
+            body_av = max(1, av - hdr_h)
+            body_total = len(l3_body_rows)
+            rel = max(0, mouse_event.position[1] - hdr_h)
+            ratio = rel / max(1, body_av - 1)
+            scroll_y = max(0, min(body_total - body_av, int(ratio * body_total)))
+        else:
+            total = len(rows)
+            rel = mouse_event.position[1]
+            ratio = rel / max(1, av - 1)
+            scroll_y = max(0, min(total - av, int(ratio * total)))
 
     def render_body():
         nonlocal scroll_y
         try: _,th = shutil.get_terminal_size(); term_h[0]=th
         except: th=term_h[0]
         av = max(5, th-1)
-        total = len(rows)
-        scroll_y = min(scroll_y, max(0, total-av))
 
-        ky, kh = scrollbar_knob(total, av, scroll_y) if total>av else (None, 0)
-        end = min(scroll_y+av, total)
         frags = []
 
-        for ab in range(scroll_y, end):
-            if ab >= len(rows): break
-            row = rows[ab]
+        # 层3：头部固定，只滚动 body 部分
+        if level == 3 and l3_header_rows:
+            header_h = len(l3_header_rows)
+            body_total = len(l3_body_rows)
+            body_av = max(1, av - header_h)
+            scroll_y = min(scroll_y, max(0, body_total - body_av))
+            # 固定头部
+            for ab in range(header_h):
+                if ab >= len(rows): break
+                row = rows[ab]
+                st, tx = (row[0], row[1]) if isinstance(row, (list, tuple)) else (None, str(row))
+                frags.append((f"class:{st}" if st else "", tx))
+                frags.append(("", "\n"))
 
-            # 解析行：兼容 3/4 元组
-            if isinstance(row, (list, tuple)):
-                if len(row) == 4:
-                    st, tx, meta, exported = row
-                elif len(row) == 3:
-                    st, tx, meta = row
-                    exported = False
+            # body 可滚动区域
+            body_start = header_h
+            body_end = len(rows)  # includes tail
+            body_total = body_end - body_start
+            body_av = max(1, av - header_h)
+            sy = min(scroll_y, max(0, body_total - body_av))
+            b_end = min(body_start + sy + body_av, body_end)
+
+            # 为 body 部分计算滚动条
+            ky2, kh2 = scrollbar_knob(body_total, body_av, sy) if body_total > body_av else (None, 0)
+
+            for ab in range(body_start + sy, b_end):
+                if ab >= len(rows): break
+                row = rows[ab]
+                if isinstance(row, (list, tuple)):
+                    st, tx = row[0], row[1]
                 else:
-                    st, tx = row[:2]
+                    st, tx = None, str(row)
+
+                rel = ab - body_start - sy
+                if ky2 is not None:
+                    bar = "#" if ky2 <= rel < ky2 + kh2 else "│"
+                    bar_st = "sc.knob" if ky2 <= rel < ky2 + kh2 else "sc.track"
+                    frags.append((f"class:{st}" if st else "", tx))
+                    frags.append((f"class:{bar_st}", bar, scrollbar_mouse_handler))
+                else:
+                    frags.append((f"class:{st}" if st else "", tx))
+                frags.append(("", "\n"))
+
+            # 补空白行 + body 滚动条
+            for rel in range(b_end - body_start - sy, body_av):
+                if ky2 is not None:
+                    ch = "#" if ky2 <= rel < ky2 + kh2 else "│"
+                    st2 = "sc.knob" if ky2 <= rel < ky2 + kh2 else "sc.track"
+                    frags.append((f"class:{st2}", f"  {ch}", scrollbar_mouse_handler))
+                else:
+                    frags.append(("", ""))
+                frags.append(("", "\n"))
+
+        else:
+            total = len(rows)
+            scroll_y = min(scroll_y, max(0, total - av))
+            ky, kh = scrollbar_knob(total, av, scroll_y) if total > av else (None, 0)
+            # 层1/层2：原始滚动方式
+            end = min(scroll_y+av, total)
+            for ab in range(scroll_y, end):
+                if ab >= len(rows): break
+                row = rows[ab]
+
+                if isinstance(row, (list, tuple)):
+                    if len(row) == 4:
+                        st, tx, meta, exported = row
+                    elif len(row) == 3:
+                        st, tx, meta = row
+                        exported = False
+                    else:
+                        st, tx = row[:2]
+                        meta = None
+                        exported = False
+                else:
+                    st, tx = None, str(row)
                     meta = None
                     exported = False
-            else:
-                st, tx = None, str(row)
-                meta = None
-                exported = False
 
-            # 滚动条
-            rel = ab - scroll_y
-            if ky is not None:
-                ch = "#" if ky <= rel < ky + kh else "│"
-                bar = ch
-            else:
-                bar = ""
+                rel = ab - scroll_y
+                if ky is not None:
+                    bar = "#" if ky <= rel < ky + kh else "│"
+                    bar_st = "sc.knob" if ky <= rel < ky + kh else "sc.track"
+                    bar_handler = scrollbar_mouse_handler
+                else:
+                    bar = ""
+                    bar_handler = None
 
-            is_sel = (sel_abs is not None and ab == sel_abs)
+                is_sel = (sel_abs is not None and ab == sel_abs)
 
-            # 构建行文本
-            if meta is not None:
-                avail_w = 72 - (1 if bar else 0)
-                line = tx
-                meta_display = f"  {meta}"
-                meta_vis_w = wcs(meta_display)
-                line_vis_w = wcs(line)
-                pad = max(1, avail_w - line_vis_w - meta_vis_w)
-                line = line + " " * pad + meta_display
-                line = wctrunc(line, avail_w) + bar
-            else:
-                line = tx + bar
+                if meta is not None:
+                    line = tx
+                    meta_display = f"  {meta}"
+                    meta_vis_w = wcs(meta_display)
+                    line_vis_w = wcs(line)
+                    avail = 72 if bar else 74
+                    pad = max(1, avail - line_vis_w - meta_vis_w)
+                    line = line + " " * pad + meta_display
+                else:
+                    line = tx
 
-            # 样式选择
-            style_class = ""
-            if is_sel:
-                style_class = "class:selected"
-            elif exported:
-                style_class = "class:exported"
-            elif st:
-                style_class = f"class:{st}"
-            # else: default style (empty string)
+                style_class = ""
+                if is_sel:
+                    style_class = "class:selected"
+                elif exported:
+                    style_class = "class:exported"
+                elif st:
+                    style_class = f"class:{st}"
 
-            frags.append((style_class, f"{line}\n"))
+                if bar:
+                    frags.append((style_class, line))
+                    frags.append((f"class:{bar_st}", bar, bar_handler))
+                else:
+                    frags.append((style_class, line))
+                frags.append(("", "\n"))
 
-        # 补空白 + 滚动条
-        for rel in range(end-scroll_y, av):
-            if ky is not None:
-                ch = "#" if ky <= rel < ky + kh else "│"
-                st2 = "sc.knob" if ky <= rel < ky + kh else "sc.track"
-                frags.append((st2, f"  {ch}\n"))
-            else:
+            # 补空白行
+            for rel in range(end - scroll_y, av):
+                if ky is not None:
+                    ch = "#" if ky <= rel < ky + kh else "│"
+                    st2 = "sc.knob" if ky <= rel < ky + kh else "sc.track"
+                    frags.append((f"class:{st2}", f"  {ch}", scrollbar_mouse_handler))
+                else:
+                    frags.append(("", ""))
                 frags.append(("", "\n"))
 
         return FormattedText(frags)

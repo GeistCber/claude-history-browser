@@ -28,7 +28,9 @@ python ~/.claude/skills/history-search/scripts/history_tui.py
   └── ESC                      └── ESC                       └── ESC
 ```
 
-- **↑↓** 选择，**Enter** 进入，**ESC** 逐级返回
+- **↑↓** 选择或滚动，**Enter** 进入，**ESC** 逐级返回
+- 层3的头部（时间戳+问题）**固定不动**，只滚动回答正文
+- 右侧滚动条支持**鼠标左键按住拖动**
 - AI 回答原文一字不改，Markdown 真实渲染
 - 中日韩字符正确对齐
 
@@ -115,7 +117,7 @@ python history_tui.py
 ├── README.md                    ← GitHub 项目说明
 ├── LICENSE                      ← MIT 许可
 ├── scripts/
-│   ├── history_tui.py           ← 三层键盘 TUI 主程序（含可视化导出）
+│   ├── history_tui.py           ← 三层键盘 TUI 主程序（含可视化导出、可拖动滚动条）
 │   ├── update_cache.py          ← JSONL→缓存索引扫描（多项目）
 │   ├── export.py                ← 对话导出工具
 │   └── import.py                ← 对话导入工具
