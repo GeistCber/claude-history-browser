@@ -651,7 +651,9 @@ def main():
     @kb.add("up", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if sel > 0:
+        if scroll_y > 0:
+            scroll_y -= 1
+        elif sel > 0:
             sel -= 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -659,13 +661,16 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next  PgUp/PgDn 滚动"
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ 滚动到顶/底后自动切题"
         # else: at first question, top of scroll — do nothing
 
     @kb.add("down", filter=is_l3)
     def _(e):
         nonlocal scroll_y, sel, show_text, show_q, show_ts, info_msg
-        if sel < total_questions - 1:
+        max_scroll = max(0, len(rows) - 3)
+        if scroll_y < max_scroll:
+            scroll_y += 1
+        elif sel < total_questions - 1:
             sel += 1
             qt, at, ts = load_answer(cur_uuid, sel)
             show_q = qt; show_ts = ts
@@ -673,7 +678,7 @@ def main():
             show_text = f"{hd}{qt}\n\n{'─'*68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ prev/next  PgUp/PgDn 滚动"
+            info_msg = f"#{sel+1} · {len(show_text)}字 · ↑↓ 滚动到顶/底后自动切题"
         # else: at last question, bottom of scroll — do nothing
 
     @kb.add("pageup", filter=is_l12)
