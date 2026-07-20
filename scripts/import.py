@@ -2,16 +2,40 @@
 """
 import.py -- Claude Code conversation history import tool
 
-Reads a .claude-export directory (produced by export.py) and reconstructs
-JSONL files in the target machine's ~/.claude/projects/ directory.
+Reads a .claude-export directory (produced by export.py) and copies the JSONL
+files into ~/.claude/projects/<project>/ on the target machine. Then optionally
+rebuilds the history cache so the TUI can browse imported sessions.
 
-Usage:
-  python scripts/import.py --input ./my-backup              # Import all
-  python scripts/import.py --input ./backup --dry-run        # Validate only
-  python scripts/import.py --input ./backup --overwrite      # Overwrite existing
-  python scripts/import.py --input ./backup --project NewProj # Remap project
-  python scripts/import.py --input ./backup --session <uuid>  # Single session
-  python scripts/import.py --input ./backup --update-cache    # Rebuild cache
+核心原理：
+  导出 = shutil.copy2() 把 ~/.claude/projects/ 下的 .jsonl 文件复制到一个便携目录。
+  导入 = shutil.copy2() 把便携目录里的 .jsonl 文件复制回 ~/.claude/projects/。
+  全程文件级操作，无需手动编辑任何 JSON 内容。
+
+典型流程（推荐完整命令）：
+  1. 预览：python import.py --input ./backup-20260720 --dry-run
+  2. 导入：python import.py --input ./backup-20260720 --update-cache
+
+参数：
+  --input        必需。导出的 .claude-export 目录路径。
+  --project      将导入的会话放到不同的项目名下（重命名）。
+  --session      只导入指定 UUID 的单条会话。
+  --dry-run      预览模式：只验证和列出将要执行的操作，不写任何文件。
+  --overwrite    如果目标文件已存在，覆盖之（默认跳过）。
+  --update-cache 导入后自动跑 update_cache.py 重建历史缓存（推荐）。
+  --verbose      打印详细日志。
+
+注意事项：
+  - 默认遇到已存在的文件会跳过（不会覆盖）。确认要替换时加 --overwrite。
+  - --update-cache 会自动运行，如果失败可在导入后手动执行：
+      python scripts/update_cache.py
+  - 导入的会话可以在 TUI 三层浏览器中查看：python scripts/history_tui.py
+
+示例：
+  python scripts/import.py --input ./backup-20260720 --dry-run
+  python scripts/import.py --input ./backup-20260720 --overwrite
+  python scripts/import.py --input ./backup-20260720 --project MyNewProject
+  python scripts/import.py --input ./backup-20260720 --update-cache
+  python scripts/import.py --input ./backup-20260720 -s <uuid> --update-cache
 """
 import argparse, json, os, shutil, subprocess, sys
 from datetime import datetime
@@ -182,11 +206,33 @@ def main():
         description="Claude Code conversation history import tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Examples:\n"
-            "  python scripts/import.py --input ./backup --dry-run\n"
-            "  python scripts/import.py --input ./backup --overwrite\n"
-            "  python scripts/import.py --input ./backup --project MyProject\n"
-            "  python scripts/import.py --input ./backup --update-cache\n"
+            "━━━ 快速入门 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "\n"
+            "  1. 先预览：python import.py --input ./backup --dry-run\n"
+            "  2. 正式导入：python import.py --input ./backup --update-cache\n"
+            "  3. 打开看：python ../scripts/history_tui.py\n"
+            "\n"
+            "━━━ 常见场景 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "\n"
+            "  # 完整流程（推荐）：预览 → 导入+更新缓存 → 打开TUI\n"
+            "  python import.py --input ./backup-20260720 --dry-run\n"
+            "  python import.py --input ./backup-20260720 --update-cache\n"
+            "  python ../scripts/history_tui.py\n"
+            "\n"
+            "  # 覆盖已有文件\n"
+            "  python import.py --input ./backup --overwrite\n"
+            "\n"
+            "  # 导入后改名（目标项目不存在则自动创建）\n"
+            "  python import.py --input ./backup --project MyNewProject\n"
+            "\n"
+            "  # 只导入一个会话\n"
+            "  python import.py --input ./backup --session <uuid>\n"
+            "\n"
+            "━━━ 工作原理 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "\n"
+            "  导出生成了一个 .claude-export 目录，里面是 .jsonl 文件。\n"
+            "  导入就是把那些 .jsonl 文件复制到 ~/.claude/projects/ 下，\n"
+            "  不需要手动编辑任何 JSON 内容。\n"
         ),
     )
     parser.add_argument("--input", required=True,

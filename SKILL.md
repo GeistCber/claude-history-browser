@@ -56,6 +56,8 @@ winpty python C:\Users\Laptop\.claude\skills\history-search\scripts\history_tui.
 
 将对话历史通过 `.claude-export` 格式在机器间传输。
 
+> **核心原理**：导出就是把 `.jsonl` 文件从 `~/.claude/projects/` **复制**到一个便携目录树；导入就是把这个目录树里的文件**复制回去**。全程是文件级批量操作，不需要手动编辑任何 JSON 内容。
+
 ### 导出
 
 ```bash
@@ -75,31 +77,69 @@ python scripts/export.py --dry-run
 python scripts/export.py --format md --output ./with-markdown
 ```
 
+导出后生成的结构：
+```
+./my-backup/
+├── metadata.json              # 元信息（导出时间、源机器名、项目列表）
+└── projects/
+    └── C--Users-Laptop/
+        ├── index.json         # 会话索引
+        ├── abc123.jsonl       # 单个会话文件（程序自动生成，不要手改）
+        ├── def456.jsonl
+        └── def456/            # 子代理会话目录（如有）
+```
+
 ### 导入
 
 ```bash
-# 先验证再导入
+# 1. 先预览（推荐）——只看会写哪些文件，不动磁盘
 python scripts/import.py --input ./my-backup --dry-run
 
-# 覆盖已有文件
-python scripts/import.py --input ./my-backup --overwrite
+# 2. 正式导入——复制文件到 ~/.claude/projects/ 下
+python scripts/import.py --input ./my-backup
 
-# 导入到新项目名
-python scripts/import.py --input ./my-backup --project MyNewProject
-
-# 导入后重建缓存
+# 3. 导入后一步到位（推荐）——导入 + 重建 TUI 搜索缓存
 python scripts/import.py --input ./my-backup --update-cache
+
+# 如遇"文件已存在"报错，可用 --overwrite 覆盖
+python scripts/import.py --input ./my-backup --overwrite --update-cache
+
+# 导入到不同的项目名下（改名）
+python scripts/import.py --input ./my-backup --project MyNewProject
 ```
 
-### 跨机传输示例
+### 导入过程详解（脚本内部做了什么）
 
-1. 源机器：`python scripts/export.py --output ./backup-20260719`
-2. 传输目录（USB、网络共享、云存储）
-3. 目标机器：`cd ~/.claude/skills/history-search/scripts`
-4. `python import.py --input ./backup-20260719 --update-cache`
-5. 运行 `history_tui.py` 即可浏览导入会话
+| 步骤 | 做了什么 | 出错怎么办 |
+|------|----------|------------|
+| ① 验证结构 | 检查 `metadata.json`、`index.json`、所有列出的 `.jsonl` 文件是否存在 | 显示具体缺失文件路径 |
+| ② 安全检查 | 防止路径遍历攻击 | 直接报错退出 |
+| ③ 磁盘检查 | 确保剩余空间 ≥ 数据量 × 2 | 警告但不中断 |
+| ④ UUID 去重 | 检查不同项目间有没有重复 UUID | 警告但不中断 |
+| ⑤ **复制文件** | `shutil.copy2()` 逐个复制 `.jsonl` 到 `~/.claude/projects/<项目名>/` | 会继续导其他文件，最后汇总错误 |
+| ⑥ 复制子代理目录 | 对应的 `{uuid}/` 子目录也复制过去 | 警告，不影响主文件 |
+| ⑦ 重建缓存（可选） | 跑 `update_cache.py` 刷新索引，让 TUI 能搜到 | 警告，后续可手动跑 |
 
-导出格式是可移植目录树，不含机器特定依赖。
+**关键点**：第⑤步就是纯文件 `copy2`，跟你手动把 U 盘文件拖到文件夹里是一个道理。不是"粘贴 JSON 内容"，没有半行需要手改。
+
+### 跨机传输完整示例
+
+```bash
+# ── 源机器 ──
+cd ~/.claude/skills/history-search/scripts
+python export.py --output ./backup-20260720
+
+# ── 然后把 backup-20260720/ 目录传到目标机器 ──
+# 可以用 U 盘、scp、网盘、共享文件夹，随便什么方式
+
+# ── 目标机器 ──
+cd ~/.claude/skills/history-search/scripts
+python import.py --input /path/to/backup-20260720 --dry-run     # 先预览
+python import.py --input /path/to/backup-20260720 --update-cache # 正式导入
+winpty python history_tui.py                                     # 打开看
+```
+
+导出格式是纯文件目录树，不含机器特定依赖，跨平台通用。
 
 ## 多项目支持
 
