@@ -22,7 +22,7 @@
 | 📁 **Multi-project** | Auto-scans all `~/.claude/projects/` directories |
 | ⚡ **Lazy loading** | Response text read live from JSONL, no pre-caching |
 | 🌏 **CJK support** | Proper character width via wcwidth |
-| 🐧 **Cross-platform** | Windows (cmd/PowerShell) and Linux/macOS |
+| 🖥️ **Cross-platform** | Windows (cmd/PowerShell) and Linux/macOS |
 
 ## Quick Install
 
@@ -61,16 +61,17 @@ Layer 1: Session list  ──Enter──>  Layer 2: Question list  ──Enter�
   └── ESC                             └── ESC                              └── ESC
 ```
 
-| Key | Layer 1 | Layer 2 | Layer 3 |
-|-----|---------|---------|---------|
-| `↑` `↓` | Select session | Select question | Scroll response |
-| `PgUp` `PgDn` | Page scroll | Page scroll | Page scroll |
-| `Enter` | View questions | View response | — |
-| `ESC` | Exit | Back to L1 | Back to L2 |
-| `x` | Export mode | — | — |
-| `i` | Import mode | — | — |
-| `Space` | Toggle select (export) | — | — |
-| `a` | Select all (export) | — | — |
+| Key | Layer 1 | Layer 2 | Layer 3 | Export Mode |
+|-----|---------|---------|---------|-------------|
+| `↑` `↓` | Select session | Select question | Scroll response | Navigate session list |
+| `PgUp` `PgDn` | Page scroll | Page scroll | Page scroll | Page scroll |
+| `Enter` | View questions | View response | — | Execute export |
+| `ESC` | Exit | Back to L1 | Back to L2 | Cancel |
+| `x` | Export mode | — | — | — |
+| `i` | Import mode | — | — | — |
+| `Space` | — | — | — | Toggle select |
+| `A` | — | — | — | Select / deselect all |
+| `Ctrl+C` | Exit TUI | Exit TUI | Exit TUI | Cancel |
 
 ## Import Mode
 
@@ -90,7 +91,7 @@ Press `i` at the session list to import conversations from another machine:
 Press `x` at the session list:
 
 1. `Space` to toggle session selection
-2. `a` to select/deselect all in current project
+2. `A` to select/deselect all in current project
 3. `Enter` to execute export
 4. Creates `claude-export-<timestamp>/` in the skill directory
 
