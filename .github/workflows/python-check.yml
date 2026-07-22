@@ -1,0 +1,21 @@
+name: Python check
+
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install prompt_toolkit wcwidth
+      - run: python -m py_compile scripts/history_tui.py
+      - run: python -m py_compile scripts/update_cache.py
+      - run: python -m py_compile scripts/export.py
+      - run: python -m py_compile scripts/import.py
+      - run: python -m py_compile scripts/install_deps.py

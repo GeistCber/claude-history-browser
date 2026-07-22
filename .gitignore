@@ -1,0 +1,6 @@
+.history_cache/
+*.pyc
+__pycache__/
+claude-export-*/
+dist/
+*.egg-info/
