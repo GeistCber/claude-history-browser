@@ -13,26 +13,13 @@ description: >
 
 1. **检查缓存**：确认 `.history_cache/sessions.json` 存在，否则提示运行 `update_cache.py`
 2. **显示会话概览**：打印最近会话的简单摘要（项目、条数、时间）
-3. **引导启动 TUI**：根据操作系统告诉用户适合的命令，或在当前对话输入带 `!` 前缀的版本。
+3. **引导启动 TUI**：用户使用 **Windows cmd**（不是 PowerShell 也不是 Git Bash），只给出以下命令：
 
-   **Linux / macOS（PowerShell / bash 均支持 `~`）：**
-   ```bash
-   python ~/.claude/skills/history-search/scripts/history_tui.py
-   # 或在本对话：
-   ! python ~/.claude/skills/history-search/scripts/history_tui.py
-   ```
-
-   **Windows cmd：**
    ```cmd
    python %USERPROFILE%\.claude\skills\history-search\scripts\history_tui.py
    ```
 
-   **Windows PowerShell：**
-   ```powershell
-   python $env:USERPROFILE\.claude\skills\history-search\scripts\history_tui.py
-   ```
-
-   > `!` 前缀会将命令在本会话中执行，输出直接显示在对话中。
+   > **绝对不要**使用 `~`（cmd 不展开它）或 `$env:`（PowerShell 语法）。
 
 ## 双栏操作
 
