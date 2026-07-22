@@ -11,15 +11,26 @@ description: >
 
 当用户调用此技能时，按以下步骤执行：
 
-1. **检查缓存**：确认 `.history_cache/sessions.json` 存在，否则提示运行 `update_cache.py`
-2. **显示会话概览**：打印最近会话的简单摘要（项目、条数、时间）
-3. **引导启动 TUI**：用户使用 **Windows cmd**（不是 PowerShell 也不是 Git Bash），只给出以下命令：
+1. **检查缓存**：确认 `.history_cache/sessions.json` 存在
+   - 不存在 → 提示运行 `update_cache.py`
+   - 存在 → 继续，**不**打印概览
+2. **检测当前用户环境**：
+   - 检查 `session_info["platform"]` 和用户的 shell 对话历史
+   - **只给出对应该环境的命令**，不要列出所有平台版本
+3. **给出唯一命令**：
 
-   ```cmd
-   python %USERPROFILE%\.claude\skills\history-search\scripts\history_tui.py
-   ```
+   根据环境选择其一：
 
-   > **绝对不要**使用 `~`（cmd 不展开它）或 `$env:`（PowerShell 语法）。
+   | 环境 | 命令 |
+   |---|---|
+   | **Linux / macOS (bash/zsh)** | `python ~/.claude/skills/history-search/scripts/history_tui.py` |
+   | **Windows cmd** | `python %USERPROFILE%\.claude\skills\history-search\scripts\history_tui.py` |
+   | **Windows PowerShell** | `python $env:USERPROFILE\.claude\skills\history-search\scripts\history_tui.py` |
+
+   > ⚠️ `~` 只适用于 Linux/macOS，不适用于 Windows cmd
+   > ⚠️ `%USERPROFILE%` 只适用于 Windows cmd
+   > ⚠️ `$env:USERPROFILE` 只适用于 PowerShell
+   > ⚠️ 选错命令会报错，务必根据用户环境只发对应的那条
 
 ## 双栏操作
 
