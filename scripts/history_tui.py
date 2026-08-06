@@ -16,10 +16,8 @@ _run_cache_update = _imp.run_cache_update
 import prompt_toolkit.output.defaults as _ptk_out
 import platform as _platform
 if _platform.system() == "Windows":
-    # Windows 下使用 Win32 输出后端，不强制 VT100/PTY
     pass
 else:
-    # Unix 下强制 VT100 确保兼容 tmux/screen
     _orig_create = _ptk_out.create_output
     def _force_vt100(*a, **kw):
         from prompt_toolkit.output.vt100 import Vt100_Output
@@ -61,7 +59,7 @@ def wctrunc(s, w):
     for ch in s:
         chw = max(1, wcswidth(ch))
         if cw + chw > w - 1:
-            res += "…"
+            res += "..."
             break
         res += ch
         cw += chw
@@ -184,7 +182,7 @@ def load_answer(uuid, qi):
                     fp2 = inp.get("file_path", "")
                     fc = inp.get("content", "")
                     if fp2 and fc:
-                        ap.append(f"[Write] {fp2} ({len(fc)}字):\n{fc}")
+                        ap.append(f"[Write] {fp2} ({len(fc)}):\n{fc}")
     at = "\n".join(ap) if ap else "(empty)"
     try:
         ts = datetime.fromisoformat(qts.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M") if qts else ""
@@ -243,27 +241,30 @@ def _build_export_item(session_data):
 
 
 def short_project_name(project):
-    # Windows-encoded path: C--Users-WuWenxuan → decode, take last component
     if "--" in project:
         parts = project.replace("--", "/").replace("-", "/").split("/")
         return parts[-1] if parts else project[:6]
-    # Plain name (Linux or flat): "home-user-project" → take last "-" segment
     idx = project.rfind("-")
     if idx > 0:
         return project[idx+1:]
     return project[:12]
 
 
+def session_ts(s):
+    return s.get("last_ts") or s.get("timestamp") or "0" * 20
+
+
 def row_sessions(ss, total, upd, exported_uuids):
     r = [("title", "  SESSIONS"),
-         ("info", "  [项目] 项目标签 · [E] 已导出 · x=导出模式 · i=导入模式"),
-         ("sep", f"  {'─' * 74}")]
+         ("info", "  [project] . [E] exported . x=export . i=import"),
+         ("sep", f"  {'-' * 74}")]
     for i, s in enumerate(ss):
+        ts = session_ts(s)
         try:
-            d = datetime.fromisoformat(s["timestamp"].replace("Z", "+00:00")).strftime("%m-%d") if s["timestamp"] != "0" * 20 else "??-??"
+            d = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%m-%d") if ts != "0" * 20 else "??-??"
         except:
             d = "??-??"
-        lb = (s.get("title") or s.get("first_msg", "") or "(无)")[:40]
+        lb = (s.get("title") or s.get("first_msg", "") or "(none)")[:40]
         uuid8 = s['uuid'][:8]
         cnt = s['count']
         proj = s.get("project", "")
@@ -277,24 +278,24 @@ def row_sessions(ss, total, upd, exported_uuids):
             parts.append("      ")
         parts.append(f"  #{i+1:<4} {d}  {lb}")
         line = "".join(parts)
-        meta = f"{cnt}条  {uuid8}"
+        meta = f"{cnt}msgs  {uuid8}"
         r.append(("session", line, meta, exported))
-    r.append(("sep", f"  {'─' * 74}"))
-    r.append(("dim", f"  共 {total} 个会话 · 更新 {upd}"))
-    r.append(("hint", "  [E]=已导出  i=导入  ↑↓  PgUp/PgDn  Enter 选择  ESC/^C 退出"))
+    r.append(("sep", f"  {'-' * 74}"))
+    r.append(("dim", f"  Total {total} sessions . Updated {upd}"))
+    r.append(("hint", "  [E]=exported  i=import  up/down  PgUp/PgDn  Enter  ESC/^C"))
     return r
 
 
 def row_questions(qs, uuid8, ds, title):
-    r = [("title", f"  QUESTIONS — {uuid8} ({ds})"),
+    r = [("title", f"  QUESTIONS - {uuid8} ({ds})"),
          ("dim", f"  {title}"),
-         ("sep", f"  {'─' * 74}")]
+         ("sep", f"  {'-' * 74}")]
     for i, q in enumerate(qs):
         p = wctrunc(q.replace("\n", " ").replace("\r", ""), 66)
         r.append((None, f"  #{i+1:<5} {p}"))
-    r.append(("sep", f"  {'─' * 74}"))
-    r.append(("dim", f"  共 {len(qs)} 条"))
-    r.append(("hint", "  ↑↓  PgUp/PgDn  Enter 查看  ESC 返回"))
+    r.append(("sep", f"  {'-' * 74}"))
+    r.append(("dim", f"  Total {len(qs)}"))
+    r.append(("hint", "  up/down  PgUp/PgDn  Enter  ESC"))
     return r
 
 
@@ -315,9 +316,8 @@ def row_answer(text, qt, ts):
     if ts:
         header.append(("ts", f"  >>> {ts}"))
     header.append(("qtext", f"  {qt.replace(chr(10), chr(10)+'  ')}"))
-    header.append(("sep", f"  {'─' * 74}"))
-    # text 包含 ">>> ts\n\nqt\n\n────\n\nanswer"，只解析 answer 部分
-    answer_text = text.split("─" * 68, 1)[-1].lstrip("\n ")
+    header.append(("sep", f"  {'-' * 74}"))
+    answer_text = text.split("-" * 68, 1)[-1].lstrip("\n ")
     body = []
     in_code = False
     for line in answer_text.split("\n"):
@@ -346,26 +346,27 @@ def row_answer(text, qt, ts):
         bm = re.match(r'^(\s*)[-*]\s+(.*)', stripped)
         if bm:
             indent2 = indent + bm.group(1)
-            body.append(("list", f"{indent2}• {bm.group(2)}"))
+            body.append(("list", f"{indent2}* {bm.group(2)}"))
             continue
         plain = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
         full = f"{indent}{plain}"
         for chunk in _split_long_line(full, 76):
             body.append((None, chunk))
-    tail = [("sep", f"  {'─' * 74}"),
-            ("hint", f"  ↑↓ scroll / switch question  PgUp/PgDn 翻页  ESC 返回  ·  {len(answer_text)} 字")]
+    tail = [("sep", f"  {'-' * 74}"),
+            ("hint", f"  up/down scroll  PgUp/PgDn  ESC  .  {len(answer_text)} chars")]
     return header, body, tail
 
 
 def row_sessions_export(ss, selected_uuids, total_sessions):
-    r = [("title", "  EXPORT — select sessions"),
-         ("sep", f"  {'─' * 74}")]
+    r = [("title", "  EXPORT - select sessions"),
+         ("sep", f"  {'-' * 74}")]
     for i, s in enumerate(ss):
+        ts = session_ts(s)
         try:
-            d = datetime.fromisoformat(s["timestamp"].replace("Z", "+00:00")).strftime("%m-%d") if s["timestamp"] != "0" * 20 else "??-??"
+            d = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%m-%d") if ts != "0" * 20 else "??-??"
         except:
             d = "??-??"
-        lb = (s.get("title") or s.get("first_msg", "") or "(无)")[:40]
+        lb = (s.get("title") or s.get("first_msg", "") or "(none)")[:40]
         uuid8 = s['uuid'][:8]
         cnt = s['count']
         proj = s.get("project", "")
@@ -375,25 +376,25 @@ def row_sessions_export(ss, selected_uuids, total_sessions):
         cb_style = "checkbox.on" if checked else "checkbox.off"
         proj_tag = f"[{proj_short}]" if proj_short else "      "
         line = f"  {proj_tag}  #{i+1:<4} {d}  {lb}"
-        meta = f"{cnt}条  {uuid8}"
+        meta = f"{cnt}msgs  {uuid8}"
         r.append((cb_style, line, meta))
     n_sel = len(selected_uuids)
-    r.append(("sep", f"  {'─' * 74}"))
-    r.append(("dim", f"  已选 {n_sel}/{total_sessions}  ·  Space 选中/取消  A 项目全选  Enter 导出  ESC 取消"))
+    r.append(("sep", f"  {'-' * 74}"))
+    r.append(("dim", f"  Selected {n_sel}/{total_sessions}  .  Space  A project  Enter  ESC"))
     return r
 
 
 def row_export_result(result, output_dir):
     r = [("title", "  EXPORT RESULT"),
-         ("sep", f"  {'─' * 74}")]
+         ("sep", f"  {'-' * 74}")]
     if result["success"]:
         r.append(("result.ok", "  Export complete"))
     else:
         r.append(("result.err", "  Export finished with errors"))
     r.append((None, ""))
     r.append(("dim", f"  Output: {output_dir}"))
-    r.append(("dim", f"  Sessions exported: {result['count']}"))
-    r.append(("dim", f"  Total size: {result['total_size']:,} bytes ({result['total_size']/1024/1024:.1f} MB)"))
+    r.append(("dim", f"  Sessions: {result['count']}"))
+    r.append(("dim", f"  Size: {result['total_size']:,} bytes ({result['total_size']/1024/1024:.1f} MB)"))
     if result["manifest"]:
         r.append(("dim", f"  Manifest: {result['manifest']}"))
     r.append((None, ""))
@@ -402,24 +403,18 @@ def row_export_result(result, output_dir):
         for uuid, err in result["errors"]:
             r.append(("result.err", f"    - {uuid}: {err}"))
         r.append((None, ""))
-    r.append(("sep", f"  {'─' * 74}"))
-    r.append(("hint", "  ESC 返回会话列表"))
+    r.append(("sep", f"  {'-' * 74}"))
+    r.append(("hint", "  ESC back"))
     return r
 
 
-
 def _get_user_project():
-    """Detect the user's current Claude Code project directory.
-    /resume only scans this directory, so imported sessions MUST go here."""
     pd = os.path.expanduser("~/.claude/projects")
-    # Derive project name from CWD using Claude Code's own naming convention
-    # Windows: C:\Users\WuWenxuan → C--Users-WuWenxuan
     cwd = os.getcwd()
     proj = cwd.replace(":", "--").replace("\\", "-").replace("/", "-")
     target = os.path.join(pd, proj)
     if os.path.isdir(target):
         return target, proj
-    # Fallback: scan for any existing project (skip "imported")
     if os.path.isdir(pd):
         for n in sorted(os.listdir(pd)):
             if n == "imported":
@@ -427,12 +422,11 @@ def _get_user_project():
             pp = os.path.join(pd, n)
             if os.path.isdir(pp):
                 return pp, n
-    # Last resort: create from CWD
     os.makedirs(target, exist_ok=True)
     return target, proj
 
+
 def _term_import():
-    """Terminal-mode import: prompts path, copies to user's project dir, rebuilds cache."""
     print()
     p = input(">>> Enter export dir or .jsonl path: ").strip()
     if not p:
@@ -664,6 +658,16 @@ def main():
     def _(e):
         e.app.exit(result="__import__")
 
+    @kb.add("r", filter=Condition(lambda: level == 1 and not export_mode and not export_result))
+    def _(e):
+        nonlocal sel, scroll_y, info_msg
+        _reload_sessions()
+        if sel >= total_sessions:
+            sel = max(0, total_sessions - 1)
+        scroll_y = 0
+        rb1()
+        info_msg = f"Reloaded {total_sessions} sessions"
+
     @kb.add("space", filter=is_export_mode)
     def _(e):
         nonlocal selected_uuids, info_msg
@@ -797,10 +801,10 @@ def main():
             show_q = qt
             show_ts = ts
             hd = f">>> {ts}\n\n" if ts else ""
-            show_text = f"{hd}{qt}\n\n{'─' * 68}\n\n{at}"
+            show_text = f"{hd}{qt}\n\n{'-' * 68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(at)}字 · ↑↓ scroll/switch"
+            info_msg = f"#{sel+1} . {len(at)} chars . up/down scroll/switch"
 
     @kb.add("down", filter=is_l3)
     def _(e):
@@ -816,10 +820,10 @@ def main():
             show_q = qt
             show_ts = ts
             hd = f">>> {ts}\n\n" if ts else ""
-            show_text = f"{hd}{qt}\n\n{'─' * 68}\n\n{at}"
+            show_text = f"{hd}{qt}\n\n{'-' * 68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(at)}字 · ↑↓ scroll/switch"
+            info_msg = f"#{sel+1} . {len(at)} chars . up/down scroll/switch"
 
     @kb.add("pageup", filter=is_l12)
     def _(e):
@@ -846,10 +850,10 @@ def main():
             show_q = qt
             show_ts = ts
             hd = f">>> {ts}\n\n" if ts else ""
-            show_text = f"{hd}{qt}\n\n{'─' * 68}\n\n{at}"
+            show_text = f"{hd}{qt}\n\n{'-' * 68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(at)}字 · ↑↓ scroll/switch"
+            info_msg = f"#{sel+1} . {len(at)} chars . up/down scroll/switch"
 
     @kb.add("pagedown", filter=is_l3)
     def _(e):
@@ -865,10 +869,10 @@ def main():
             show_q = qt
             show_ts = ts
             hd = f">>> {ts}\n\n" if ts else ""
-            show_text = f"{hd}{qt}\n\n{'─' * 68}\n\n{at}"
+            show_text = f"{hd}{qt}\n\n{'-' * 68}\n\n{at}"
             scroll_y = 0
             rb3()
-            info_msg = f"#{sel+1} · {len(at)}字 · ↑↓ scroll/switch"
+            info_msg = f"#{sel+1} . {len(at)} chars . up/down scroll/switch"
 
     @kb.add("enter", filter=is_l1)
     def _(e):
@@ -880,14 +884,14 @@ def main():
             return
         cur_uuid = s["uuid"]
         cur_title = s.get("title", "")
-        cur_ts = (s.get("timestamp", "") or "")[:10]
+        cur_ts = session_ts(s)[:10]
         cur_questions = qd.get("questions", [])
         total_questions = len(cur_questions)
         sel = 0
         scroll_y = 0
         level = 2
         rb2()
-        info_msg = f"会话 #{nav_stack[-1][1]+1} · {total_questions} 条"
+        info_msg = f"Session #{nav_stack[-1][1]+1} . {total_questions} msgs"
 
     @kb.add("enter", filter=is_l2)
     def _(e):
@@ -899,11 +903,11 @@ def main():
         show_q = qt
         show_ts = ts
         hd = f">>> {ts}\n\n" if ts else ""
-        show_text = f"{hd}{qt}\n\n{'─' * 68}\n\n{at}"
+        show_text = f"{hd}{qt}\n\n{'-' * 68}\n\n{at}"
         level = 3
         scroll_y = 0
         rb3()
-        info_msg = f"#{sel+1} · {len(at)}字 · ESC 返回"
+        info_msg = f"#{sel+1} . {len(at)} chars . ESC back"
 
     @kb.add("escape", filter=Condition(lambda: level in (1, 2, 3) and not export_mode and not export_result))
     def _(e):
@@ -999,7 +1003,7 @@ def main():
                 st, tx = (row[0], row[1]) if isinstance(row, (list, tuple)) else (None, str(row))
                 rel = ab - body_start - sy
                 if ky2 is not None:
-                    bar = "#" if ky2 <= rel < ky2 + kh2 else "│"
+                    bar = "#" if ky2 <= rel < ky2 + kh2 else "|"
                     bar_st = "sc.knob" if ky2 <= rel < ky2 + kh2 else "sc.track"
                     frags.append((f"class:{st}" if st else "", tx))
                     frags.append((f"class:{bar_st}", bar, scrollbar_mouse_handler))
@@ -1008,7 +1012,7 @@ def main():
                 frags.append(("", "\n"))
             for rel in range(b_end - body_start - sy, body_av):
                 if ky2 is not None:
-                    ch = "#" if ky2 <= rel < ky2 + kh2 else "│"
+                    ch = "#" if ky2 <= rel < ky2 + kh2 else "|"
                     st2 = "sc.knob" if ky2 <= rel < ky2 + kh2 else "sc.track"
                     frags.append((f"class:{st2}", f"  {ch}", scrollbar_mouse_handler))
                 else:
@@ -1039,7 +1043,7 @@ def main():
                     exported = False
                 rel = ab - scroll_y
                 if ky is not None:
-                    bar = "#" if ky <= rel < ky + kh else "│"
+                    bar = "#" if ky <= rel < ky + kh else "|"
                     bar_st = "sc.knob" if ky <= rel < ky + kh else "sc.track"
                     bar_handler = scrollbar_mouse_handler
                 else:
@@ -1071,7 +1075,7 @@ def main():
                 frags.append(("", "\n"))
             for rel in range(end - scroll_y, av):
                 if ky is not None:
-                    ch = "#" if ky <= rel < ky + kh else "│"
+                    ch = "#" if ky <= rel < ky + kh else "|"
                     st2 = "sc.knob" if ky <= rel < ky + kh else "sc.track"
                     frags.append((f"class:{st2}", f"  {ch}", scrollbar_mouse_handler))
                 else:
@@ -1083,12 +1087,12 @@ def main():
 
     def get_foot_text():
         if export_mode:
-            return [("class:status", f"  EXPORT MODE - {len(selected_uuids)} selected  ·  Space toggle  A project-all  Enter execute  ESC cancel")]
+            return [("class:status", f"  EXPORT MODE - {len(selected_uuids)} selected  .  Space  A project  Enter  ESC")]
         if export_result and level == 4:
             ok = export_result["count"]
             err = len(export_result["errors"])
             status = "OK" if export_result["success"] else "WARN"
-            return [("class:status", f"  Export {status} - {ok} sessions, {err} errors  ·  ESC back")]
+            return [("class:status", f"  Export {status} - {ok} sessions, {err} errors  .  ESC back")]
         if info_msg:
             return [("class:status", f"  {info_msg}")]
         return []

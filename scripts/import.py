@@ -3,8 +3,7 @@
 import.py -- Claude Code conversation history import tool
 
 Reads a .claude-export directory (produced by export.py) and copies the JSONL
-files into ~/.claude/projects/<project>/ on the target machine. Then optionally
-rebuilds the history cache so the TUI can browse imported sessions.
+files into ~/.claude/projects/<project>/ on the target machine.
 """
 import argparse, json, os, shutil, subprocess, sys
 from datetime import datetime
@@ -128,7 +127,7 @@ def main():
     parser.add_argument("--project", help="Remap to a different project name")
     parser.add_argument("--session", help="Import only this session UUID")
     parser.add_argument("--dry-run", action="store_true", help="Validate export without writing")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing files on target")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing files")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--update-cache", action="store_true", help="Run update_cache.py after import")
     args = parser.parse_args()
