@@ -4,7 +4,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "claude-history-browser"
-version = "2.0.0"
+version = "2.1.0"
 description = "Keyboard-driven TUI for browsing, exporting, and importing Claude Code conversation history"
 readme = "README.md"
 license = {text = "MIT"}

@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.1.0 (2026-08-07)
+
+### 🚀 New Features
+
+- **Sort by last-used time** — Session list sorts and displays by `last_ts` (most recent `/resume`) instead of creation time, so a session you keep resuming stays near the top.
+- **`r` key** — Reload the session list from the on-disk cache without rescanning `~/.claude/projects`.
+- **`u` key** — Manually trigger a full cache rescan (`update_cache.py`) from inside the TUI and refresh the view — a fallback for when the SessionStart auto-update hook hasn't run yet mid-session. Guards against overlapping presses while a scan is in flight.
+
+### 📚 Documentation
+
+- SKILL.md rewritten around the three-layer drill-down navigation model, with a complete shortcut table (including export mode).
+- Launch instructions now always list all three shell variants (Windows cmd, PowerShell, Linux/macOS bash/zsh) instead of guessing the shell from the terminal prompt and giving only one — a wrong guess could leave users stuck.
+- README.md shortcut table fixes (emoji, missing Ctrl+C/A entries, export-mode column).
+
+### 🛠 Technical
+
+- `update_cache.py` writes cache files atomically (write to `.tmp`, then `os.replace`) to avoid a reader seeing a half-written file.
+- `history_tui.py`: shared `_refresh_after_reload()` helper deduplicates the reload → clamp → redraw sequence between `r` and `u`.
+
 ## v2.0.0 (2026-07-22)
 
 ### 🚀 New Features
