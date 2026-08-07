@@ -256,7 +256,7 @@ def session_ts(s):
 
 def row_sessions(ss, total, upd, exported_uuids):
     r = [("title", "  SESSIONS"),
-         ("info", "  [project] . [E] exported . x=export . i=import"),
+         ("info", "  [project] . [E] exported . x=export . i=import . u=update"),
          ("sep", f"  {'-' * 74}")]
     for i, s in enumerate(ss):
         ts = session_ts(s)
@@ -282,7 +282,7 @@ def row_sessions(ss, total, upd, exported_uuids):
         r.append(("session", line, meta, exported))
     r.append(("sep", f"  {'-' * 74}"))
     r.append(("dim", f"  Total {total} sessions . Updated {upd}"))
-    r.append(("hint", "  [E]=exported  i=import  up/down  PgUp/PgDn  Enter  ESC/^C"))
+    r.append(("hint", "  [E]=exported  i=import  u=update  up/down  PgUp/PgDn  Enter  ESC/^C"))
     return r
 
 
@@ -549,6 +549,7 @@ def main():
     show_q = ""
     show_ts = ""
     info_msg = ""
+    updating_cache = False
 
     l3_header_rows = []
     l3_body_rows = []
@@ -599,6 +600,14 @@ def main():
         total_sessions = data["total"]
         updated_at = data.get("updated_at", "")[:10]
         exported_uuids = load_exported_uuids()
+
+    def _refresh_after_reload():
+        nonlocal sel, scroll_y
+        _reload_sessions()
+        if sel >= total_sessions:
+            sel = max(0, total_sessions - 1)
+        scroll_y = 0
+        rb1()
 
     rb1()
 
@@ -660,13 +669,28 @@ def main():
 
     @kb.add("r", filter=Condition(lambda: level == 1 and not export_mode and not export_result))
     def _(e):
-        nonlocal sel, scroll_y, info_msg
-        _reload_sessions()
-        if sel >= total_sessions:
-            sel = max(0, total_sessions - 1)
-        scroll_y = 0
-        rb1()
+        nonlocal info_msg
+        _refresh_after_reload()
         info_msg = f"Reloaded {total_sessions} sessions"
+
+    @kb.add("u", filter=Condition(lambda: level == 1 and not export_mode and not export_result))
+    async def _(e):
+        nonlocal info_msg, updating_cache
+        if updating_cache:
+            return
+        updating_cache = True
+        info_msg = "Updating cache..."
+        e.app.invalidate()
+        try:
+            ok, err = await asyncio.to_thread(_run_cache_update, None)
+            if ok:
+                _refresh_after_reload()
+                info_msg = f"Cache updated - {total_sessions} sessions"
+            else:
+                info_msg = f"Update failed: {err}"
+        finally:
+            updating_cache = False
+        e.app.invalidate()
 
     @kb.add("space", filter=is_export_mode)
     def _(e):

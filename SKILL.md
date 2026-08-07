@@ -12,27 +12,15 @@ description: 三层深度浏览 TUI，浏览/导出/导入 Claude Code 历史会
 调用此技能时：
 
 1. **缓存检查**：`.history_cache/sessions.json` 不存在 → 提示运行 `update_cache.py`
-2. **环境检测**：根据用户终端提示符判断 shell 类型，给出正确的启动命令
+2. **给出全部三种启动命令**：不要只猜一种 shell——终端提示符判断不总是准确，猜错会让用户卡住（真实发生过）。三条一起给，并标注清楚各自适用场景，让用户直接复制能跑的那条。
 
-### Shell 检测规则
+### 启动命令（始终全部列出）
 
-| 提示符特征 | Shell 类型 | 变量写法 |
-|---|---|---|
-| `PS C:\...>` | PowerShell | `$env:USERPROFILE` |
-| `C:\...>` | cmd | `%USERPROFILE%` |
-| `$` 或 `#` | bash/zsh | `~` |
+- **Windows cmd**：`python %USERPROFILE%\.claude\skills\history-search\scripts\history_tui.py`
+- **Windows PowerShell**：`python $env:USERPROFILE\.claude\skills\history-search\scripts\history_tui.py`
+- **Linux / macOS (bash/zsh)**：`python ~/.claude/skills/history-search/scripts/history_tui.py`
 
-> **关键**：不要只看 environment info 中的 `Shell:` 字段，要以用户终端提示符为准。提示符 `C:\Users\...>` 是 cmd，`PS C:\Users\...>` 才是 PowerShell。
-
-### 启动命令（按检测结果选一条给出）
-
-- **cmd**：`python %USERPROFILE%\.claude\skills\history-search\scripts\history_tui.py`
-- **PowerShell**：`python $env:USERPROFILE\.claude\skills\history-search\scripts\history_tui.py`
-- **bash/zsh**：`python ~/.claude/skills/history-search/scripts/history_tui.py`
-
-### 命令执行失败时
-
-立即用另外两种变量写法重试，不要再次确认。
+可选：可根据终端提示符特征（`C:\...>` = cmd，`PS C:\...>` = PowerShell，`$`/`#` = bash/zsh）把最可能匹配的一条放在最前面。
 
 ## 三层导航
 
@@ -54,7 +42,8 @@ description: 三层深度浏览 TUI，浏览/导出/导入 Claude Code 历史会
 | `ESC` | 退出 | 返回层级1 | 返回层级2 | 取消 |
 | `x` | 导出模式 | — | — | — |
 | `i` | 导入模式 | — | — | — |
-| `r` | 刷新列表（重读缓存） | — | — | — |
+| `r` | 刷新列表（重读缓存文件，不重新扫描） | — | — | — |
+| `u` | 更新缓存（重新扫描 `~/.claude/projects`，含新会话） | — | — | — |
 | `Space` | — | — | — | 勾选/取消 |
 | `A` | — | — | — | 全选/取消 |
 | `Ctrl+C` | 退出 | 退出 | 退出 | 取消 |
